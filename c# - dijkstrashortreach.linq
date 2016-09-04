@@ -4,14 +4,14 @@
 
 static void Main()
 {
-//    using (var file = File.Open(Util.CurrentQueryPath.Replace(".linq", ".txt"), FileMode.Open))
-//    using (var reader = new StreamReader(file))
-//    {
-//        Console.SetIn(reader);
-//        Execute();
-//    }
+    using (var file = File.Open(Util.CurrentQueryPath.Replace(".linq", ".txt"), FileMode.Open))
+    using (var reader = new StreamReader(file))
+    {
+        Console.SetIn(reader);
+        Execute();
+    }
 
-    Execute();
+    //Execute();
 }
 
 static void Execute()
@@ -24,8 +24,6 @@ static void Execute()
         int startingNode = int.Parse(Console.ReadLine()) - 1; //input is one based, we're zero based
 
         var distances = CalculateDistances(graph, startingNode); 
-
-        int index = 0;
         
         string line = string.Join(" ", distances.Where(d => d != 0).Select(d => d == int.MaxValue ? -1 : d));
         Console.WriteLine(line);
