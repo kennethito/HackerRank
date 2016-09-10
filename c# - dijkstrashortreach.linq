@@ -20,68 +20,22 @@ static void Execute()
 
     for (int i = 0; i < testCount; i++)
     {
-        var graph = ParseGraph();
+        var edges = ParseGraph().ToList();
         int startingNode = int.Parse(Console.ReadLine()) - 1; //input is one based, we're zero based
 
-        var distances = CalculateDistances(graph, startingNode); 
+        var dji = new Djikstra(edges, Djikstra.GraphEdgeType.Undirected);
+        var idsToVertices = dji.Execute(startingNode);
         
-        string line = string.Join(" ", distances.Where(d => d != 0).Select(d => d == int.MaxValue ? -1 : d));
+        string line = string.Join(" ", idsToVertices.Values.Where(v => v.Weight != 0).Select(v => v.Weight == int.MaxValue ? -1 : v.Weight));
         Console.WriteLine(line);
     }
 }
 
-static int[] CalculateDistances(int[,] graph, int startingNode)
-{
-    var distances = new int[graph.GetLength(0)];
-    var visited = new bool[graph.GetLength(0)];
-    
-    for (int i = 0; i < distances.Length; i++)
-    {
-        distances[i] = int.MaxValue;
-    }
-    
-    distances[startingNode] = 0;
-    
-    for (int node = 0; node < graph.GetLength(0); node++)
-    {
-        int next = FindMinimalNextNode(distances, visited);
-        visited[next] = true;
-        
-        for (int edge = 0; edge < graph.GetLength(1); edge++)
-        {
-            if(visited[edge])
-                continue;
-            
-            if (graph[next, edge] > 0 //connected
-                    && distances[next] != int.MaxValue                              //don't overflow
-                    && distances[next] + graph[next, edge] < distances[edge]) //lower cost route
-            {
-                distances[edge] = distances[next] + graph[next, edge];
-            }
-        }
-    }
-    
-    return distances;
-}
-
-static int FindMinimalNextNode(int[] distances, bool[] visited)
-{
-    return
-        distances
-            .Select((d, i) => new { Index = i, Distance = d})
-            .Where(x => !visited[x.Index])
-            .OrderBy(x => x.Distance)
-            .Select(x => x.Index)
-            .First();
-}
-
-static int[,] ParseGraph()
+static IEnumerable<Djikstra.Edge> ParseGraph()
 {
     var counts = Console.ReadLine().Split(' ').Select(int.Parse).ToList();
     int nodeCount = counts[0];
     int edgeCount = counts[1];
-    
-    int[,] graph = new int[nodeCount, nodeCount];
     
     for (int i = 0; i < edgeCount; i++)
     {
@@ -90,17 +44,183 @@ static int[,] ParseGraph()
         int node2 = edge[1] - 1; //input is one based, we're zero based
         int weight = edge[2];
 
-        //multiple edges between the same nodes of differing weights, keep smallest
-        if (graph[node1, node2] == 0 || graph[node1, node2] > weight)
-        {
-            graph[node1, node2] = weight;
-            graph[node2, node1] = weight;
-        }
+        yield return new Djikstra.Edge(node1, node2, weight);
     }
-    
-    return graph;
 }
 
+public class Djikstra
+{
+    private readonly IEnumerable<Edge> edges;
 
+    public Djikstra(IEnumerable<Edge> edges, GraphEdgeType graphEdgeType)
+    {
+        if (graphEdgeType == GraphEdgeType.Directed)
+        {
+            this.edges = edges;
+        }
+        else
+        {
+            this.edges = edges.Concat(edges.Select(e => new Edge(e.To, e.From, e.Weight)));
+        }
+    }
 
-// Define other methods and classes here
+    public IDictionary<int, Vertex> Execute(int start)
+    {
+        var vertices = new SortedDictionary<int, Vertex>();
+        foreach (var edge in this.edges)
+        {
+            if (!vertices.ContainsKey(edge.From))
+            {
+                vertices.Add(edge.From, new Vertex(edge.From));
+            }
+
+            if (!vertices.ContainsKey(edge.To))
+            {
+                vertices.Add(edge.To, new Vertex(edge.To));
+            }
+
+            vertices[edge.From].Edges.Add(edge);
+        }
+
+        vertices[start].Weight = 0;
+
+        bool[] visited = new bool[vertices.Count];
+        
+        var queue = new PriorityQueue<Vertex>(new VertexComparer());
+        foreach (var kvp in vertices)
+        {
+            queue.Enqueue(kvp.Value);
+        }
+
+        while (!queue.IsEmpty)
+        {
+            var vertex = queue.Dequeue();
+            visited[vertex.Id] = true;
+
+            if (vertex.Weight != int.MaxValue)
+            {
+                foreach (Edge edge in vertex.Edges)
+                {
+                    if (visited[edge.To])
+                        continue;
+
+                    var neighbor = vertices[edge.To];
+                    int alternateWeight = vertex.Weight + edge.Weight;
+
+                    if (alternateWeight < neighbor.Weight)
+                    {
+                        queue.Remove(neighbor);
+                        neighbor.Weight = alternateWeight;
+                        neighbor.Previous = vertex;
+                        queue.Enqueue(neighbor);
+                    }
+                }
+            }
+        }
+
+        return vertices;
+    }
+
+    public class Edge
+    {
+        private readonly int from;
+        private readonly int to;
+        private readonly int weight;
+
+        public Edge(int from, int to, int weight)
+        {
+            this.from = from;
+            this.to = to;
+            this.weight = weight;
+        }
+
+        public int From => this.from;
+        public int To => this.to;
+        public int Weight => this.weight;
+    }
+
+    public enum GraphEdgeType
+    {
+        Undirected,
+        Directed
+    }
+
+    private class VertexComparer : IComparer<Vertex>
+    {
+        public int Compare(Vertex left, Vertex right)
+        {
+            int compare = left.Weight.CompareTo(right.Weight);
+            if (compare == 0)
+            {
+                return left.Id.CompareTo(right.Id);
+            }
+
+            return compare;
+        }
+    }
+
+    public class Vertex
+    {
+        private readonly int id;
+
+        public Vertex(int id)
+        {
+            this.id = id;
+        }
+
+        public int Id => this.id;
+        public int Weight { get; set; } = int.MaxValue;
+        public List<Edge> Edges { get; } = new List<Edge>();
+        public Vertex Previous { get; set; }
+
+        public IEnumerable<int> GetPath()
+        {
+            Stack<int> ids = new Stack<int>();
+
+            var vertex = this;
+            while (vertex != null)
+            {
+                ids.Push(vertex.id);
+
+                vertex = vertex.Previous;
+            }
+
+            return ids.ToList();
+        }
+    }
+
+    private class PriorityQueue<T>
+    {
+        //Binary tree complexity instead of heap
+        //Requires the comparer to avoid duplicates
+        private readonly SortedSet<T> set;
+
+        public PriorityQueue(IComparer<T> comparer = null)
+        {
+            this.set = new SortedSet<T>(comparer);
+        }
+
+        public void Enqueue(T item)
+        {
+            if (!this.set.Add(item))
+            {
+                throw new InvalidOperationException("Duplicates not currently allowed (use comparer)");
+            }
+        }
+
+        public T Dequeue()
+        {
+            var item = this.set.FirstOrDefault();
+            this.Remove(item);
+
+            return item;
+        }
+
+        public void Remove(T item)
+        {
+            this.set.Remove(item);
+        }
+
+        public bool IsEmpty => this.set.Count == 0;
+    }
+}
