@@ -8,7 +8,11 @@ static void Main()
     using (var reader = new StreamReader(file))
     {
         Console.SetIn(reader);
+		
+		var stopwatch = Stopwatch.StartNew();
         Execute();
+		stopwatch.Stop();
+		stopwatch.Elapsed.Dump();
     }
 
     //Execute();
